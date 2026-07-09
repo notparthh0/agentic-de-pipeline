@@ -1,124 +1,73 @@
-# Autonomous Data Pipeline Monitor Agent
+# agentic-de-pipeline
 
-> **Python · LangChain · Llama3.2 · BigQuery · GCP**
+A LangChain agent that monitors a BigQuery data pipeline for quality issues and generates an HTML incident report.
 
-An AI agent that autonomously monitors live BigQuery data pipelines, detects anomalies, reasons about root causes like a senior Data Reliability Engineer, and generates professional HTML incident reports — **with zero human intervention.**
+I built this to get a feel for how LLM agents work in practice — specifically how tool-calling lets the model decide what to do next rather than you hard-coding a sequence of steps. The underlying data comes from the [gcp-data-pipeline](https://github.com/notparthh0/gcp-data-pipeline) project.
 
----
+## What it does
 
-## Architecture
-
-```
-Natural Language Task
-        │
-        ▼
-┌─────────────────────────────────────────┐
-│         LangChain Agent (ReAct)         │
-│         Powered by Llama3.2:3b          │
-└────────────┬────────────────────────────┘
-             │ decides which tools to call
-     ┌───────┴────────┬────────────────┐
-     ▼                ▼                ▼
-scan_pipeline    query_pipeline   get_category
-   _health()       _data(sql)       _stats()
-     │                │                │
-     └───────┬─────────┘────────────────┘
-             ▼
-    generate_incident_report()
-             │
-             ▼
-    📄 HTML Incident Report
-```
-
----
-
-## What It Does
-
-| Step | Action | Technology |
-|------|--------|-----------|
-| 1 | Scans 100K+ row BigQuery table for issues | google-cloud-bigquery |
-| 2 | Detects nulls, outliers, row imbalances statistically | Python statistics module |
-| 3 | Reasons about root cause using LLM | LangChain + Llama3.2 (local) |
-| 4 | Queries specific SQL for deeper investigation | BigQuery DirectQuery |
-| 5 | Generates full HTML incident report | Jinja2 |
-
----
-
-## Resume Bullets Demonstrated
-
-| Claim | Where Implemented |
-|-------|-----------------|
-| Modular autonomous AI pipeline using LangChain and LLM APIs | `agent.py` — LangChain tool-calling agent |
-| Executing structured DE workflows from natural language | `run_agent(task)` — any plain English task |
-| Multi-step LLM reasoning pipelines | AgentExecutor with 4 chained tools |
-| Automated tool-use on real-world DE contexts | Live BigQuery `fact_orders` table (100K rows) |
-
----
-
-## Project Structure
+You give the agent a task in plain English. It decides which tools to call, in what order, and generates a report at the end.
 
 ```
-agentic-de-pipeline/
-├── agent.py                  # Main LangChain agent
-├── tools/
-│   ├── bq_tools.py           # BigQuery query & stats tools
-│   ├── anomaly_tools.py      # Statistical anomaly detection
-│   └── report_tools.py       # HTML incident report generator
-├── reports/                  # Generated HTML reports
-├── .env.example              # Environment variables template
-└── requirements.txt
+$ python agent.py "Check the pipeline for data quality issues and write a report"
+
+> scan_pipeline_health()
+  → 100,000 rows | health: 90% | 1 issue found
+  → [MEDIUM] 2,039 null values (2.04%) in 'amount'
+
+> get_category_stats()
+  → Clothing: 19,988 rows | avg=$231.79 | nulls=430
+  → Electronics: 20,172 rows | ...
+
+> generate_incident_report(analysis, recommendations)
+  → Report saved: reports/incident_report_2026-07-09.html
 ```
 
----
+## Stack
+
+- Python, LangChain, Ollama (llama3.2:3b running locally)
+- Google BigQuery (live table from the GCP pipeline project)
+- Jinja2 for the HTML report
 
 ## Setup
 
 ```bash
-# 1. Install Ollama (https://ollama.com) and pull the model
+# Install Ollama and pull the model
 ollama pull llama3.2:3b
 
-# 2. Install Python dependencies
 pip install -r requirements.txt
 
-# 3. Configure environment
 cp .env.example .env
-# Add your GCP credentials path and project ID
+# Fill in your GCP project ID and credentials path
 
-# 4. Run the agent
-python agent.py "Monitor the pipeline and find any data quality issues"
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+python agent.py "Check the pipeline for issues"
 ```
 
----
-
-## Example Output
+## Project structure
 
 ```
-🤖 AGENT TASK: Monitor the ecommerce data pipeline
-
-> Invoking: scan_pipeline_health
-  Total rows: 100,000 | Health: 85% | Issues: 1
-  [MEDIUM] NULL_VALUES: 2039 null values (2.04%) in 'amount'
-
-> Invoking: get_category_stats
-  Clothing: 19988 rows | avg=$231.79 | nulls=430
-  Electronics: 20172 rows | avg=$232.24 | nulls=426
-  ...
-
-> Invoking: generate_incident_report
-  ✅ Report saved: reports/incident_report_2026-07-09.html
+agent.py              # Agent definition and tool wiring
+tools/
+  bq_tools.py         # BigQuery queries
+  anomaly_tools.py    # Anomaly detection logic
+  report_tools.py     # HTML report generation
+reports/              # Generated reports go here
 ```
 
----
+## Environment variables
 
-## Switching to Gemini API
+| Variable | Description |
+|---|---|
+| `GCP_PROJECT_ID` | Your GCP project ID |
+| `BQ_TABLE` | Full table path (default: `{project}.ecommerce_analytics.fact_orders`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account key |
+| `OLLAMA_MODEL` | Ollama model to use (default: `llama3.2:3b`) |
 
-To use Google Gemini instead of local Ollama, change one line in `agent.py`:
+## Notes
 
-```python
-# From:
-llm = ChatOllama(model="llama3.2:3b", temperature=0)
+The anomaly detection is fairly basic — it checks for nulls, z-score outliers on row counts, and z-score outliers on average amounts per category. Z-score isn't always the right tool here (it assumes normality) but it works fine as a first pass with this dataset. Proper time-series comparison would be the next thing to add.
 
-# To:
-from langchain_google_genai import ChatGoogleGenerativeAI
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key="YOUR_KEY")
-```
+The health score is weighted: HIGH issues cost 20 points, MEDIUM cost 10, LOW cost 5. Starting at 100.
+
+Swapping Ollama for the Gemini API is one line — change `ChatOllama` to `ChatGoogleGenerativeAI` in `agent.py`.

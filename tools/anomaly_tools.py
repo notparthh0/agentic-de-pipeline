@@ -1,31 +1,30 @@
-"""Anomaly detection tools — finds data quality issues in the pipeline."""
 import statistics
 from tools.bq_tools import get_table_stats, get_category_breakdown
 
+SEVERITY_PENALTY = {"HIGH": 20, "MEDIUM": 10, "LOW": 5}
+
 
 def detect_anomalies() -> dict:
-    """
-    Run automated anomaly detection on the live BigQuery table.
-    Returns a structured report of all issues found.
-    """
+    """Scan the BigQuery table for data quality issues."""
     issues = []
     stats = get_table_stats()
     categories = get_category_breakdown()
 
-    # 1. Null value check
+    # Null value check
     for col in ["null_amounts", "null_countries", "null_categories", "null_users"]:
-        if stats.get(col, 0) > 0:
-            pct = round(stats[col] / stats["total_rows"] * 100, 2)
+        count = stats.get(col, 0)
+        if count > 0:
+            pct = round(count / stats["total_rows"] * 100, 2)
+            field = col.replace("null_", "")
             issues.append({
                 "type": "NULL_VALUES",
                 "severity": "HIGH" if pct > 5 else "MEDIUM",
-                "column": col.replace("null_", ""),
-                "count": stats[col],
+                "count": count,
                 "percentage": pct,
-                "description": f"{stats[col]} null values ({pct}%) in column '{col.replace('null_', '')}'"
+                "description": f"{count} null values ({pct}%) in '{field}'"
             })
 
-    # 2. Category row count imbalance
+    # Row count imbalance across categories
     if categories:
         counts = [c["row_count"] for c in categories]
         mean_count = statistics.mean(counts)
@@ -36,15 +35,14 @@ def detect_anomalies() -> dict:
                 issues.append({
                     "type": "ROW_IMBALANCE",
                     "severity": "MEDIUM",
-                    "column": "category",
                     "category": cat["category"],
                     "count": cat["row_count"],
                     "expected": round(mean_count),
                     "z_score": round(z_score, 2),
-                    "description": f"Category '{cat['category']}' has {cat['row_count']} rows (z-score: {round(z_score,2)}), significantly different from mean {round(mean_count)}"
+                    "description": f"'{cat['category']}' has {cat['row_count']} rows vs expected ~{round(mean_count)} (z={round(z_score,2)})"
                 })
 
-    # 3. Amount outlier detection
+    # Amount outlier detection per category
     if categories:
         avg_amounts = [c["avg_amount"] for c in categories if c["avg_amount"]]
         if avg_amounts:
@@ -57,13 +55,15 @@ def detect_anomalies() -> dict:
                         issues.append({
                             "type": "AMOUNT_OUTLIER",
                             "severity": "HIGH",
-                            "column": "amount",
                             "category": cat["category"],
                             "avg_amount": cat["avg_amount"],
                             "global_mean": round(global_mean, 2),
                             "z_score": round(z, 2),
-                            "description": f"Category '{cat['category']}' avg amount ${cat['avg_amount']} is a statistical outlier (z={round(z,2)})"
+                            "description": f"'{cat['category']}' avg amount ${cat['avg_amount']} is an outlier (z={round(z,2)}, global mean=${round(global_mean,2)})"
                         })
+
+    penalty = sum(SEVERITY_PENALTY.get(i["severity"], 0) for i in issues)
+    health_score = max(0, 100 - penalty)
 
     return {
         "total_rows": stats.get("total_rows", 0),
@@ -71,5 +71,5 @@ def detect_anomalies() -> dict:
         "avg_amount": stats.get("avg_amount", 0),
         "issues_found": len(issues),
         "issues": issues,
-        "health_score": max(0, 100 - (len(issues) * 15))
+        "health_score": health_score,
     }

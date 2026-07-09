@@ -3,6 +3,8 @@ from google.cloud import bigquery
 from google.api_core.exceptions import BadRequest
 
 PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+if not PROJECT_ID:
+    raise ValueError("GCP_PROJECT_ID environment variable is required")
 TABLE = os.getenv("BQ_TABLE", f"{PROJECT_ID}.ecommerce_analytics.fact_orders")
 
 

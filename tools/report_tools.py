@@ -34,7 +34,7 @@ TEMPLATE = """
 </head>
 <body>
 <h1>Pipeline Incident Report</h1>
-<p class="subtitle">Generated: {{ date }} | Table: ecommerce_analytics.fact_orders</p>
+<p class="subtitle">Generated: {{ date }} | Table: {{ table }}</p>
 
 <div class="metrics">
   <div class="metric">
@@ -108,6 +108,7 @@ def generate_report(anomaly_report: dict, analysis: str, recommendations: str, c
     template = env.from_string(TEMPLATE)
 
     health = anomaly_report.get("health_score", 100)
+    table_name = os.getenv("BQ_TABLE", "ecommerce_analytics.fact_orders")
     html = template.render(
         date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         total_rows=anomaly_report.get("total_rows", 0),
@@ -118,6 +119,7 @@ def generate_report(anomaly_report: dict, analysis: str, recommendations: str, c
         analysis=analysis,
         recommendations=recommendations,
         category_data=category_data,
+        table=table_name,
     )
 
     os.makedirs("reports", exist_ok=True)

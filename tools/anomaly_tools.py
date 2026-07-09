@@ -11,10 +11,11 @@ def detect_anomalies() -> dict:
     categories = get_category_breakdown()
 
     # Null value check
+    total_rows = stats.get("total_rows", 0)
     for col in ["null_amounts", "null_countries", "null_categories", "null_users"]:
         count = stats.get(col, 0)
-        if count > 0:
-            pct = round(count / stats["total_rows"] * 100, 2)
+        if total_rows > 0 and count > 0:
+            pct = round(count / total_rows * 100, 2)
             field = col.replace("null_", "")
             issues.append({
                 "type": "NULL_VALUES",

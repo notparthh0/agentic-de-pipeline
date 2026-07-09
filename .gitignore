@@ -1,0 +1,7 @@
+service-account-key.json
+*.json.key
+.env
+__pycache__/
+*.pyc
+.DS_Store
+reports/

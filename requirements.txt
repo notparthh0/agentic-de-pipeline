@@ -1,0 +1,9 @@
+langchain
+langchain-core
+langchain-ollama
+google-cloud-bigquery
+google-auth
+google-oauth2
+jinja2
+pandas
+python-dotenv
